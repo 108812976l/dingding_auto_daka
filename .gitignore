@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# venv
+venv/
+.env/
+
+# build / dist
+build/
+dist/
+
+# adb 临时文件
+ui.xml
+screen.png
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
