@@ -2,50 +2,79 @@ import os
 import re
 import subprocess
 import time
-import datetime
-import random
-import holidays
+from datetime import datetime
 
-def get_screen_size():
-    #获取屏幕分辨率
-    result = subprocess.check_output(
-        ["adb","shell","wm","size"],
-        encoding="utf-8",
-    )
+ADB = r"C:\adb\platform-tools\adb.exe"
+LOG_FILE = "logs.txt"
 
-    match = re.search(r"Physical size:\s*(\d+)x(\d+)",result)
-    if not match:
-        raise RuntimeError("无法获取屏幕分辨率")
+# ---------- 节假日列表 ----------
+HOLIDAYS_2025 = [
+    "2025-01-01",
+    "2025-01-31","2025-02-01","2025-02-02","2025-02-03","2025-02-04","2025-02-05","2025-02-06",  # 春节
+    "2025-04-05",  # 清明
+    "2025-05-01","2025-05-02","2025-05-03",  # 劳动节
+    "2025-06-22","2025-06-23","2025-06-24",  # 端午
+    "2025-09-10","2025-09-11","2025-09-12",  # 中秋
+    "2025-10-01","2025-10-02","2025-10-03","2025-10-04","2025-10-05","2025-10-06","2025-10-07"  # 国庆
+]
 
-def worktime_is()->bool:
-    #工作日判断
-    today = datetime.date.today()
-    print(today)
-    cn_holidays = holidays.country_holidays("CN",years=today.year)
-    if today in cn_holidays:
+def is_workday(date_str: str) -> bool:
+    """判断今天是否上班"""
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    weekday = date_obj.weekday()  # 周一=0，周日=6
+    if weekday >= 5:  # 周末
         return False
-
-    if today.weekday() >= 5:
+    if date_str in HOLIDAYS_2025:
         return False
-
     return True
 
-def daka_judge():
-    if worktime_is:
-        daka_main()
+def log(message: str):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{now} ---> {message}\n")
+    print(message)
+
+# ---------- 滑动解锁 ----------
+def unlock_screen():
+    os.system(f'"{ADB}" shell input keyevent 224')  # 点亮屏幕
+    time.sleep(1)
+    os.system(f'"{ADB}" shell input swipe 540 2000 540 800 300')  # 解锁
+    time.sleep(1)
+
+# ---------- 打开钉钉 ----------
+def open_dingding():
+    os.system(f'"{ADB}" shell am start -n com.alibaba.android.rimet/.biz.LaunchHomeActivity')
+    time.sleep(3)
+
+# ---------- 杀死钉钉 ----------
+def kill_dingding():
+    os.system(f'"{ADB}" shell am force-stop com.alibaba.android.rimet')
+    time.sleep(1)
+
+# ---------- 点击打卡 ----------
+def click_daka():
+    # 用简单点击方式，假设钉钉已在前台
+    xml = os.popen(f'"{ADB}" shell uiautomator dump /dev/tty').read()
+    match = re.search(r'text="打卡".*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
+    if match:
+        x1, y1, x2, y2 = map(int, match.groups())
+        x = (x1 + x2) // 2
+        y = (y1 + y2) // 2
+        os.system(f'"{ADB}" shell input tap {x} {y}')
+        time.sleep(1)
+        return True
+    return False
+
+# ---------- 主流程 ----------
+if __name__ == "__main__":
+    today = datetime.now().strftime("%Y-%m-%d")
+    if is_workday(today):
+        unlock_screen()
+        open_dingding()
+        if click_daka():
+            log("打卡成功")
+        else:
+            log("打卡失败")
+        kill_dingding()
     else:
-        print("yes")
-
-def daka_main():
-    os.system("adb shell input keyevent 26") #点亮屏幕
-    os.system("adb shell input swipe 555 1600 500 500 500")
-    os.system("adb shell monkey -p com.alibaba.android.rimet -c android.intent.category.LAUNCHER 1")
-    time.sleep(10) #10s延迟
-    os.system("adb shell input tap 555 1850")
-    time.sleep(10)
-    os.system("adb shell input tap 150 1010")
-
-
-
-if __name__ == '__main__':
-    daka_judge()
+        log("放假，跳过")
