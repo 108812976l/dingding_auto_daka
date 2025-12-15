@@ -1,32 +1,44 @@
 import os
 import re
-import subprocess
 import time
+import json
+import urllib.request
 from datetime import datetime
 
 ADB = r"C:\adb\platform-tools\adb.exe"
 LOG_FILE = "logs.txt"
 
-# ---------- 节假日列表 ----------
-HOLIDAYS_2025 = [
-    "2025-01-01",
-    "2025-01-31","2025-02-01","2025-02-02","2025-02-03","2025-02-04","2025-02-05","2025-02-06",  # 春节
-    "2025-04-05",  # 清明
-    "2025-05-01","2025-05-02","2025-05-03",  # 劳动节
-    "2025-06-22","2025-06-23","2025-06-24",  # 端午
-    "2025-09-10","2025-09-11","2025-09-12",  # 中秋
-    "2025-10-01","2025-10-02","2025-10-03","2025-10-04","2025-10-05","2025-10-06","2025-10-07"  # 国庆
-]
+# ---------- 拉取节假日列表 ----------
+def get_holidays(year: int) -> dict:
+    filename = f"{year}_holidays.json"
 
-def is_workday(date_str: str) -> bool:
-    """判断今天是否上班"""
-    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-    weekday = date_obj.weekday()  # 周一=0，周日=6
-    if weekday >= 5:  # 周末
-        return False
-    if date_str in HOLIDAYS_2025:
-        return False
-    return True
+    if not os.path.exists(filename):
+        url = f"https://fastly.jsdelivr.net/gh/NateScarlet/holiday-cn@master/{year}.json"
+        with urllib.request.urlopen(url) as response:
+            data = response.read()
+        with open(filename, "wb") as f:
+            f.write(data)
+
+    with open(filename, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def build_holidays_map(holiday_json: dict) -> dict:
+    return {
+        day["date"]: {
+            "isOffDay": day["isOffDay"],
+            "name": day["name"]
+        }
+        for day in holiday_json.get("days", [])
+    }
+
+def is_workday(today: datetime, day_map: dict) -> tuple[bool, str]:
+    date_str = today.strftime("%Y-%m-%d")
+
+    if date_str in day_map:
+        info = day_map[date_str]
+        return (not info["isOffDay"]), info["name"]
+
+    return (today.weekday() < 5, "普通工作日")
 
 def log(message: str):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -36,9 +48,9 @@ def log(message: str):
 
 # ---------- 滑动解锁 ----------
 def unlock_screen():
-    os.system(f'"{ADB}" shell input keyevent 224')  # 点亮屏幕
+    os.system(f'"{ADB}" shell input keyevent 224')
     time.sleep(1)
-    os.system(f'"{ADB}" shell input swipe 540 2000 540 800 300')  # 解锁
+    os.system(f'"{ADB}" shell input swipe 540 2000 540 800 300')
     time.sleep(1)
 
 # ---------- 打开钉钉 ----------
@@ -53,7 +65,6 @@ def kill_dingding():
 
 # ---------- 点击打卡 ----------
 def click_daka():
-    # 用简单点击方式，假设钉钉已在前台
     xml = os.popen(f'"{ADB}" shell uiautomator dump /dev/tty').read()
     match = re.search(r'text="打卡".*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml)
     if match:
@@ -67,14 +78,23 @@ def click_daka():
 
 # ---------- 主流程 ----------
 if __name__ == "__main__":
-    today = datetime.now().strftime("%Y-%m-%d")
-    if is_workday(today):
+    today = datetime.now()
+    year = today.year
+
+    holiday_json = get_holidays(year)
+    day_map = build_holidays_map(holiday_json)
+
+    workday, reason = is_workday(today, day_map)
+
+    if not workday:
+        log(f"{reason},跳过")
+        exit(0)
+
+    if workday:
+        kill_dingding()
         unlock_screen()
         open_dingding()
-        if click_daka():
-            log("打卡成功")
-        else:
-            log("打卡失败")
+        time.sleep(3)
+        log("工作日打卡")
         kill_dingding()
-    else:
-        log("放假，跳过")
+
