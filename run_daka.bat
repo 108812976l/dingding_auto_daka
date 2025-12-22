@@ -19,4 +19,5 @@ REM 执行Python脚本
 
 REM 完成提示
 echo 打卡脚本已执行完成
-pause
+
+exit
