@@ -41,8 +41,10 @@ def is_workday(today: datetime, day_map: dict) -> tuple[bool, str]:
     if date_str in day_map:
         info = day_map[date_str]
         return (not info["isOffDay"]), info["name"]
-
-    return (today.weekday() < 5, "普通工作日")
+    if today.weekday() >= 5:
+        return (False, "周末")
+    else:
+        return (today.weekday() < 5, "普通工作日")
 
 
 def log_error(step: str, e: Exception):
@@ -56,6 +58,7 @@ def log_error(step: str, e: Exception):
 
 def log(message: str):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"{now} ---> {message}\n")
     print(message)
@@ -77,9 +80,9 @@ def unlock_screen():
 def open_dingding():
     try:
         os.system(f'"{ADB}" shell am start -n com.alibaba.android.rimet/.biz.LaunchHomeActivity')
-        time.sleep(3)
+        time.sleep(5)
     except Exception as e:
-        log_error("打开钉钉失败",e)
+        log_error("打开钉钉失败", e)
         raise
 
 
@@ -89,7 +92,7 @@ def kill_dingding():
         os.system(f'"{ADB}" shell am force-stop com.alibaba.android.rimet')
         time.sleep(1)
     except Exception as e:
-        log_error("结束钉钉程序失败",e)
+        log_error("结束钉钉程序失败", e)
         raise
 
 
@@ -123,12 +126,18 @@ if __name__ == "__main__":
             exit(0)
 
         if workday:
-            kill_dingding()
-            unlock_screen()
-            open_dingding()
-            time.sleep(3)
-            log("工作日打卡")
-            kill_dingding()
+            now_hour = datetime.now().hour
+            message = ""  # 建立打卡信息
+            if now_hour < 12:
+                message = "工作日上班打卡"
+            elif now_hour > 12:
+                message = "工作日下班打卡"
+            kill_dingding()  # 杀死钉钉后台
+            unlock_screen()  # 解锁
+            open_dingding()  # 打开钉钉
+            time.sleep(5)  # 等一下，自动打卡
+            log(message)  # 输出日志
+            kill_dingding()  # 杀死钉钉后台
     except Exception as e:
-        log_error("主流程异常",e)
+        log_error("主流程异常", e)
         log("脚本异常结束")
